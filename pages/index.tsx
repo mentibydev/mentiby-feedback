@@ -2,506 +2,109 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { STARTING_ENROLLMENT_NUMBER, COHORT_TYPE, COHORT_NUMBER } from '../config/enrollmentConfig';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Supabase environment variables are not set');
+}
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const skillsList = ['Python', 'C', 'C++', 'HTML/CSS', 'JS', 'Java'];
-const codingLevels = ['Beginner', 'Intermediate', 'Advanced'];
 
-export default function OnboardingForm() {
+export default function mentibyFeedbackForm() {
+  
+  
   const [form, setForm] = useState({
-    fullName: '',
-    email: '',
-    phoneNumber: '',
-    linkedin: '',
-    github: '',
-    hackerrank: '',
-    college: '',
-    collegeState: '',
-    collegeYear: '',
-    branch: '',
-    graduationYear: '',
-    understanding: '',
-    familiarSkills: [] as string[],
-    builtProjects: '',
-    goal: '',
+    yourName: '',
+    enrollmentID: '',
+    mentor1Name: '',
+    mentor2Name: '',
+    batch: '',
+    cohort: '',
+    mentor1Feedback: '',
+    mentor2Feedback: '',
+    mentibyOverallFeedback: '',
+    challengesFaced: '',
+    suggestionsToImprove: '',
+    mentorTeachingStyleRating: '',
+    overallMentibyRating: ''
   });
+
+
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
-  const [hasSubmitted, setHasSubmitted] = useState(false);
 
-  // Check for existing submission token on component mount
-  useEffect(() => {
-    const checkSubmissionStatus = () => {
-      if (typeof window !== 'undefined') {
-        const submissionToken = localStorage.getItem('mentiby_submission_token');
-        if (submissionToken) {
-          setHasSubmitted(true);
-          setSuccess(true);
-          
-          // Check if this is a duplicate submission by checking if existing enrollment ID exists
-          // but regular enrollment ID doesn't
-          const existingEnrollmentId = localStorage.getItem('mentiby_existing_enrollment_id');
-          const regularEnrollmentId = localStorage.getItem('mentiby_enrollment_id');
-          
-          if (existingEnrollmentId && !regularEnrollmentId) {
-            setError('duplicate'); // Set duplicate error state for reload case
-          }
-        }
-      }
-    };
-
-    checkSubmissionStatus();
-  }, []);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
-    if (type === 'checkbox') {
-      const checked = (e.target as HTMLInputElement).checked;
-      setForm((prev) => ({
-        ...prev,
-        familiarSkills: checked
-          ? [...prev.familiarSkills, value]
-          : prev.familiarSkills.filter((skill) => skill !== value),
-      }));
-    } else {
-      setForm((prev) => ({ ...prev, [name]: value }));
-    }
+  // Handle input changes for all form fields
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setForm(prev => ({
+      ...prev,
+      [name]: value,
+    }));
   };
+
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setSuccess(false);
+    try{
 
-    try {
-      // Check if email already exists in the database
-      const { data: existingUser, error: emailCheckError } = await supabase
-        .from('onboarding')
-        .select('Email')
-        .eq('Email', form.email)
-        .limit(1);
-
-      if (emailCheckError) {
-        console.error('Error checking email:', emailCheckError);
-        throw new Error('Unable to verify email. Please try again.');
-      }
-
-      if (existingUser && existingUser.length > 0) {
-        // Email already exists - fetch enrollment ID and show already registered message
-        const { data: userDetails, error: detailsError } = await supabase
-          .from('onboarding')
-          .select('EnrollmentID')
-          .eq('Email', form.email)
-          .limit(1);
-
-        let enrollmentId = null;
-        if (!detailsError && userDetails && userDetails.length > 0) {
-          enrollmentId = userDetails[0].EnrollmentID;
-        }
-
-        const submissionToken = `mentiby_duplicate_${form.email}_${Date.now()}`;
-        if (typeof window !== 'undefined') {
-          localStorage.setItem('mentiby_submission_token', submissionToken);
-          if (enrollmentId) {
-            localStorage.setItem('mentiby_existing_enrollment_id', enrollmentId);
-          }
-        }
-        setSuccess(true);
-        setHasSubmitted(true);
-        setError('duplicate'); // Special error state for duplicate email
-        return; // Exit early
-      }
-
-      // Validate graduation year
-      if (form.graduationYear && parseInt(form.graduationYear) < 2025) {
-        throw new Error('Graduation year must be 2025 or later');
-      }
-      // Generate unique EnrollmentID by checking the last entry in database
-      const year = new Date().getFullYear().toString().slice(-2);
-
-      // Fetch the last enrollment ID from the database
-      // Try different approaches to get the last enrollment ID
-      let lastEntry = null;
-      let fetchError = null;
-
-      // First try: Order by EnrollmentID itself (lexicographically)
-      try {
-        const result = await supabase
-          .from('onboarding')
-          .select('"EnrollmentID"')
-          .order('"EnrollmentID"', { ascending: false })
-          .limit(1);
-        lastEntry = result.data;
-        fetchError = result.error;
-      } catch (err) {
-        console.log('First approach failed, trying alternative...');
-
-        // Second try: Get all records and find the latest one manually
-        try {
-          const result = await supabase
-            .from('onboarding')
-            .select('"EnrollmentID"');
-
-          if (result.data && result.data.length > 0) {
-            // Sort enrollment IDs manually to find the highest number
-            const sortedEntries = result.data.sort((a, b) => {
-              const aNum = parseInt(a.EnrollmentID.match(/(\d+)$/)?.[1] || '0');
-              const bNum = parseInt(b.EnrollmentID.match(/(\d+)$/)?.[1] || '0');
-              return bNum - aNum; // Descending order
-            });
-            lastEntry = [sortedEntries[0]];
-          }
-          fetchError = result.error;
-        } catch (err2) {
-          console.error('Both approaches failed:', err2);
-          fetchError = err2;
-        }
-      }
-
-      if (fetchError) {
-        console.error('Error fetching last enrollment ID:', fetchError);
-        // Continue with default starting number if query fails
-      }
-
-      let nextRollNumber = STARTING_ENROLLMENT_NUMBER.toString().padStart(4, '0'); // Use the starting enrollment number
-
-      if (lastEntry && lastEntry.length > 0) {
-        const lastEnrollmentID = lastEntry[0]['EnrollmentID'];
-        console.log('Last enrollment ID found:', lastEnrollmentID);
-
-        // Extract the roll number from the last enrollment ID (format: 25MBY2001)
-        const rollNumberMatch = lastEnrollmentID.match(/(\d+)$/);
-        if (rollNumberMatch) {
-          const lastRollNumber = parseInt(rollNumberMatch[1]);
-          nextRollNumber = (lastRollNumber + 1).toString().padStart(4, '0');
-          console.log('Incremented from', lastRollNumber, 'to', nextRollNumber);
-        }
-      } else {
-        console.log('No existing entries found, using starting number:', nextRollNumber);
-      }
-
-      // Generate enrollment ID with additional uniqueness check
-      let enrollmentID = `${year}MBY${nextRollNumber}`;
-      console.log('Generated enrollment ID:', enrollmentID);
-
-      // Double-check if this ID already exists to avoid duplicates
-      const { data: existingEntry } = await supabase
-        .from('onboarding')
-        .select('"EnrollmentID"')
-        .eq('"EnrollmentID"', enrollmentID)
-        .limit(1);
-
-      if (existingEntry && existingEntry.length > 0) {
-        console.log('Enrollment ID already exists, generating new one...');
-        // If it exists, increment and try again
-        const currentNumber = parseInt(nextRollNumber);
-        nextRollNumber = (currentNumber + 1).toString().padStart(4, '0');
-        enrollmentID = `${year}MBY${nextRollNumber}`;
-        console.log('New enrollment ID:', enrollmentID);
-      }
-
-      // Prepare data for Supabase (try with original column names first)
+      // Prepare data for Supabase (Mentiby feedback form fields)
       const submissionData = {
-        'EnrollmentID': enrollmentID,
-        'Full Name': form.fullName,
-        'Email': form.email,
-        'Phone Number': form.phoneNumber,
-        'LinkedIn': form.linkedin || null,
-        'GitHub': form.github || null,
-        'Hackerrank': form.hackerrank || null,
-        'College': form.college,
-        'College State': form.collegeState,
-        'College Year': form.collegeYear,
-        'Branch': form.branch,
-        'Graduation Year': form.graduationYear,
-        'Understanding': form.understanding,
-        'Familiar Skills': form.familiarSkills.join(', '),
-        'Built Projects': form.builtProjects,
-        'Goal': form.goal,
-        'Cohort Type': COHORT_TYPE,
-        'Cohort Number': COHORT_NUMBER,
+        'Full Name': form.yourName,
+        'EnrollmentID': form.enrollmentID,
+        'Mentor 1': form.mentor1Name,
+        'Mentor 2': form.mentor2Name,
+        'Batch': form.batch,
+        'Cohort': form.cohort,
+        'Mentor 1 Feedback': form.mentor1Feedback,
+        'Mentor 2 Feedback': form.mentor2Feedback,
+        'Mentiby Overall Feedback': form.mentibyOverallFeedback,
+        'Challenges Faced': form.challengesFaced,
+        'Suggestions to Improve': form.suggestionsToImprove,
+        'Mentor Teaching Style Rating': form.mentorTeachingStyleRating,
+        'Overall Mentiby Rating': form.overallMentibyRating
       };
-
-      console.log('Submitting data:', submissionData); // Debug log
-
+      console.log('Submitting feedback:', submissionData);
       // Insert into Supabase with better error handling
       const { data, error } = await supabase
-        .from('onboarding')
+        .from('mentibyFeedback')
         .insert([submissionData])
         .select();
 
       if (error) {
-        console.error('Supabase error:', error);
+        console.log('Error inserting feedback:', error);
         throw new Error(`Database error: ${error.message}`);
       }
 
-      console.log('Success! Inserted data:', data); // Debug log
-
-      // Create unique submission token and save to localStorage
-      const submissionToken = `mentiby_${enrollmentID}_${Date.now()}`;
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('mentiby_submission_token', submissionToken);
-        localStorage.setItem('mentiby_enrollment_id', enrollmentID);
-        localStorage.setItem('mentiby_submission_date', new Date().toISOString());
-      }
-
       setSuccess(true);
-      setHasSubmitted(true);
 
-      // Clear form data for security
+      // Clear form data for security (Mentiby feedback form reset)
       setForm({
-        fullName: '',
-        email: '',
-        phoneNumber: '',
-        linkedin: '',
-        github: '',
-        hackerrank: '',
-        college: '',
-        collegeState: '',
-        collegeYear: '',
-        branch: '',
-        graduationYear: '',
-        understanding: '',
-        familiarSkills: [],
-        builtProjects: '',
-        goal: '',
+        yourName: '',
+        enrollmentID: '',
+        mentor1Name: '',
+        mentor2Name: '',
+        batch: '',
+        cohort: '',
+        mentor1Feedback: '',
+        mentor2Feedback: '',
+        mentibyOverallFeedback: '',
+        challengesFaced: '',
+        suggestionsToImprove: '',
+        mentorTeachingStyleRating: '',
+        overallMentibyRating: ''
       });
     } catch (err: any) {
-      console.error('Submission error:', err);
       setError(err.message || 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // If user has already submitted, show success state directly
-  if (hasSubmitted || success) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 py-12 px-4 relative overflow-hidden">
-        {/* Enhanced Animated Background Elements */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full mix-blend-multiply filter blur-xl opacity-40 animate-pulse"></div>
-          <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full mix-blend-multiply filter blur-xl opacity-40 animate-pulse animation-delay-2000"></div>
-          <div className="absolute top-40 left-1/2 w-80 h-80 bg-gradient-to-r from-pink-500 to-orange-500 rounded-full mix-blend-multiply filter blur-xl opacity-40 animate-pulse animation-delay-4000"></div>
-        </div>
-
-        {/* Floating Particles */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          {[...Array(20)].map((_, i) => {
-            // Use deterministic values instead of Math.random() to avoid hydration mismatch
-            const left = ((i * 37 + 13) % 100);
-            const top = ((i * 43 + 17) % 100);
-            const delay = (i * 0.7) % 5;
-            const duration = 3 + (i % 4);
-
-            return (
-              <div
-                key={i}
-                className="absolute w-2 h-2 bg-gradient-to-r from-cyan-400 to-purple-400 rounded-full opacity-60 animate-float"
-                style={{
-                  left: `${left}%`,
-                  top: `${top}%`,
-                  animationDelay: `${delay}s`,
-                  animationDuration: `${duration}s`,
-                }}
-              ></div>
-            );
-          })}
-        </div>
-
-        {/* Success Page - Full Screen */}
-        <div className="relative z-10 min-h-screen flex items-center justify-center">
-          <div className="text-center max-w-4xl mx-auto px-8">
-            {error === 'duplicate' ? (
-              // Already Registered Message
-              <>
-                {/* Warning Animation */}
-                <div className="mb-12 animate-fadeIn">
-                  <div className="relative inline-block">
-                    <div className="w-32 h-32 mx-auto mb-8 bg-gradient-to-r from-orange-400 to-red-400 rounded-full flex items-center justify-center animate-pulse">
-                      <span className="text-6xl">⚠️</span>
-                    </div>
-                    {/* Glowing effects around warning */}
-                    <div className="absolute inset-0">
-                      {[...Array(6)].map((_, i) => (
-                        <div
-                          key={i}
-                          className="absolute w-3 h-3 bg-gradient-to-r from-red-400 to-orange-400 rounded-full animate-ping"
-                          style={{
-                            left: `${25 + (i * 12)}%`,
-                            top: `${25 + ((i % 2) * 50)}%`,
-                            animationDelay: `${i * 0.4}s`,
-                          }}
-                        ></div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Already Registered Message */}
-                <div className="space-y-8 animate-fadeIn">
-                  <h1 className="text-5xl md:text-7xl font-black bg-gradient-to-r from-orange-300 via-red-300 to-pink-300 bg-clip-text text-transparent animate-gradient drop-shadow-2xl">
-                    You are already registered
-                  </h1>
-
-                  <div className="h-4 bg-gradient-to-r from-orange-400 via-red-400 to-pink-400 rounded-full animate-pulse shadow-lg max-w-2xl mx-auto"></div>
-
-                  <p className="text-2xl md:text-3xl text-gray-100 font-light tracking-wide leading-relaxed">
-                    ⚠️ Multiple form submission may lead to revoke course access
-                  </p>
-
-                  <div className="mt-12 p-8 rounded-3xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border-2 border-red-400/30 backdrop-blur-sm">
-                    <p className="text-xl text-red-200 font-semibold mb-4">
-                      🚫 Important Notice
-                    </p>
-                    <p className="text-lg text-gray-300 leading-relaxed">
-                      Your email address is already associated with an existing registration. 
-                      Attempting to register multiple times may result in the revocation of your course access.
-                    </p>
-                  </div>
-
-                  {/* Show existing enrollment info if available */}
-                  {typeof window !== 'undefined' && localStorage.getItem('mentiby_existing_enrollment_id') && (
-                    <div className="mt-8 p-6 rounded-2xl bg-gradient-to-r from-orange-500/20 to-red-500/20 border border-orange-400/30 backdrop-blur-sm">
-                      <p className="text-orange-200 font-semibold mb-2">
-                        Your Existing Enrollment ID:
-                      </p>
-                      <p className="text-2xl font-bold text-yellow-300">
-                        {localStorage.getItem('mentiby_existing_enrollment_id')}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Warning elements */}
-                  <div className="mt-16 space-y-6">
-                    <div className="flex justify-center space-x-8 text-5xl">
-                      <span className="animate-bounce" style={{ animationDelay: '0s' }}>🔒</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>⚠️</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.4s' }}>🚫</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.6s' }}>⚠️</span>
-                    </div>
-
-                    <p className="text-lg text-orange-200">
-                      If you believe this is an error, please contact our support team.
-                    </p>
-                  </div>
-                </div>
-              </>
-            ) : (
-              // Normal Success Message
-              <>
-                {/* Success Animation */}
-                <div className="mb-12 animate-fadeIn">
-                  <div className="relative inline-block">
-                    <div className="w-32 h-32 mx-auto mb-8 bg-gradient-to-r from-emerald-400 to-green-400 rounded-full flex items-center justify-center animate-bounce">
-                      <span className="text-6xl">🎉</span>
-                    </div>
-                    {/* Sparkle effects around checkmark */}
-                    <div className="absolute inset-0">
-                      {[...Array(8)].map((_, i) => (
-                        <div
-                          key={i}
-                          className="absolute w-2 h-2 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-full animate-ping"
-                          style={{
-                            left: `${20 + (i * 15)}%`,
-                            top: `${20 + ((i % 2) * 60)}%`,
-                            animationDelay: `${i * 0.3}s`,
-                          }}
-                        ></div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Welcome Message */}
-                <div className="space-y-8 animate-fadeIn">
-                  <h1 className="text-6xl md:text-8xl font-black bg-gradient-to-r from-cyan-300 via-purple-300 to-pink-300 bg-clip-text text-transparent animate-gradient drop-shadow-2xl">
-                    Welcome to MentiBY!
-                  </h1>
-
-                  <div className="h-4 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 rounded-full animate-pulse shadow-lg max-w-2xl mx-auto"></div>
-
-                  <p className="text-3xl md:text-4xl text-gray-100 font-light tracking-wide leading-relaxed">
-                    🚀 Your journey begins now!
-                  </p>
-
-                  <p className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
-                    Get ready for an amazing adventure in learning and growth. We're excited to have you on board!
-                  </p>
-
-                  {/* Additional celebration elements */}
-                  <div className="mt-16 space-y-6">
-                    <div className="flex justify-center space-x-8 text-6xl">
-                      <span className="animate-bounce" style={{ animationDelay: '0s' }}>🎯</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.2s' }}>✨</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.4s' }}>🚀</span>
-                      <span className="animate-bounce" style={{ animationDelay: '0.6s' }}>💫</span>
-                    </div>
-
-                    <p className="text-lg text-purple-200">
-                      Check your email for next steps and welcome information!
-                    </p>
-
-                    {/* Show enrollment info if available */}
-                    {typeof window !== 'undefined' && localStorage.getItem('mentiby_enrollment_id') && (
-                      <div className="mt-8 p-6 rounded-2xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-400/30 backdrop-blur-sm">
-                        <p className="text-purple-200 font-semibold">
-                          Your Enrollment ID: <span className="text-cyan-300">{localStorage.getItem('mentiby_enrollment_id')}</span>
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <style jsx>{`
-          @keyframes float {
-            0%, 100% { transform: translateY(0px) rotate(0deg) scale(1); }
-            33% { transform: translateY(-15px) rotate(120deg) scale(1.1); }
-            66% { transform: translateY(-8px) rotate(240deg) scale(0.9); }
-          }
-          
-          @keyframes gradient {
-            0%, 100% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-          }
-          
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          
-          .animate-float {
-            animation: float 6s ease-in-out infinite;
-          }
-          
-          .animate-gradient {
-            background-size: 200% 200%;
-            animation: gradient 3s ease infinite;
-          }
-          
-          .animate-fadeIn {
-            animation: fadeIn 0.5s ease-out;
-          }
-          
-          .animation-delay-2000 {
-            animation-delay: 2s;
-          }
-          
-          .animation-delay-4000 {
-            animation-delay: 4s;
-          }
-        `}</style>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 py-12 px-4 relative overflow-hidden">
@@ -563,20 +166,20 @@ export default function OnboardingForm() {
               </div>
             </div>
 
-            {/* Welcome Message */}
+            {/* Feedback Submission Acknowledgment */}
             <div className="space-y-8 animate-fadeIn">
               <h1 className="text-6xl md:text-8xl font-black bg-gradient-to-r from-cyan-300 via-purple-300 to-pink-300 bg-clip-text text-transparent animate-gradient drop-shadow-2xl">
-                Welcome to MentiBY!
+                Thank You for Your Feedback!
               </h1>
 
               <div className="h-4 bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 rounded-full animate-pulse shadow-lg max-w-2xl mx-auto"></div>
 
               <p className="text-3xl md:text-4xl text-gray-100 font-light tracking-wide leading-relaxed">
-                🚀 Your journey begins now!
+                🙏 We appreciate your valuable input.
               </p>
 
               <p className="text-xl md:text-2xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
-                Get ready for an amazing adventure in learning and growth. We're excited to have you on board!
+                Your feedback has been submitted successfully. Thank you for helping us improve MentiBY!
               </p>
 
               {/* Additional celebration elements */}
@@ -589,7 +192,7 @@ export default function OnboardingForm() {
                 </div>
 
                 <p className="text-lg text-purple-200">
-                  Check your email for next steps and welcome information!
+                  You may close this page or submit more feedback if needed.
                 </p>
               </div>
             </div>
@@ -620,379 +223,287 @@ export default function OnboardingForm() {
                   <div className="flex items-center mb-10">
                     <div className="w-4 h-12 bg-gradient-to-b from-cyan-400 to-purple-600 rounded-full mr-6 shadow-lg animate-pulse"></div>
                     <h2 className="text-4xl font-bold text-transparent bg-gradient-to-r from-cyan-300 to-purple-300 bg-clip-text">
-                      Personal Information
+                      Feedback Form
                     </h2>
                   </div>
 
                   <div className="grid md:grid-cols-2 gap-8">
-                    {/* Full Name */}
+                    {/* Your Name */}
                     <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block"><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Full Name</span> <span className="text-pink-400 font-black">*</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Your Name</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
                           required
-                          name="fullName"
-                          value={form.fullName}
-                          onChange={handleChange}
+                          name="yourName"
+                          value={form.yourName}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="Enter your full name"
+                          placeholder="Enter Your Name"
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
-
-                    {/* Email */}
+                    {/* Roll Number */}
                     <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block"><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Email Address</span> <span className="text-pink-400 font-black">*</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Roll Number</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
                           required
-                          name="email"
-                          type="email"
-                          value={form.email}
-                          onChange={handleChange}
+                          name="enrollmentID"
+                          value={form.enrollmentID}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="Enter your email address used for registration"
+                          placeholder="Enter your Roll Number"
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
 
-                    {/* Phone Number */}
-                    <div className="form-group group md:col-span-2">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block"><span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Phone Number</span> <span className="text-pink-400 font-black">*</span></label>
+                    {/* Mentor 1 Name */}
+                    <div className="form-group group">
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Mentor 1 Name</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
                           required
-                          name="phoneNumber"
-                          type="tel"
-                          value={form.phoneNumber}
-                          onChange={handleChange}
+                          name="mentor1Name"
+                          value={form.mentor1Name}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="Enter your phone number"
+                          placeholder="Enter Mentor 1 Name"
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Gradient Divider */}
-                <div className="h-px bg-gradient-to-r from-transparent via-purple-400/50 to-transparent"></div>
-
-                {/* Social Profiles Section */}
-                <div className="space-y-8">
-                  <div className="flex items-center mb-10">
-                    <div className="w-4 h-12 bg-gradient-to-b from-purple-400 to-pink-600 rounded-full mr-6 shadow-lg animate-pulse"></div>
-                    <h2 className="text-4xl font-bold text-transparent bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text">
-                      Social Profiles
-                    </h2>
-                  </div>
-
-                  <div className="grid md:grid-cols-3 gap-8">
-                    {/* LinkedIn */}
+                    {/* Mentor 2 Name */}
                     <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">LinkedIn Profile</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Mentor 2 Name</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
-                          name="linkedin"
-                          value={form.linkedin}
-                          onChange={handleChange}
+                          required
+                          name="mentor2Name"
+                          value={form.mentor2Name}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="LinkedIn URL"
+                          placeholder="Enter Mentor 2 Name"
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
 
-                    {/* GitHub */}
+                    {/* Batch */}
                     <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">GitHub Profile</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Batch</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
-                          name="github"
-                          value={form.github}
-                          onChange={handleChange}
+                          required
+                          name="batch"
+                          value={form.batch}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="GitHub URL"
+                          placeholder="Enter Batch (Basic or Placement)"
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
 
-                    {/* Hackerrank */}
+                    {/* Cohort */}
                     <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Hackerrank</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Cohort</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
-                          name="hackerrank"
-                          value={form.hackerrank}
-                          onChange={handleChange}
-                          className="w-full px-5 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="Hackerrank Profile Link"
-                        />
-                        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Academic Information Section */}
-                <div className="space-y-8">
-                  <div className="flex items-center mb-10">
-                    <div className="w-4 h-12 bg-gradient-to-b from-pink-400 to-orange-600 rounded-full mr-6 shadow-lg animate-pulse"></div>
-                    <h2 className="text-4xl font-bold text-transparent bg-gradient-to-r from-pink-300 to-orange-300 bg-clip-text">
-                      Academic Information
-                    </h2>
-                  </div>
-
-                  <div className="grid md:grid-cols-2 gap-8">
-                    {/* College Name */}
-                    <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">College Name</span> <span className="text-pink-400 font-black">*</span></label>
-                      <div className="relative">
-                        <input
-                          name="college"
-                          value={form.college}
-                          onChange={handleChange}
+                          required
+                          name="cohort"
+                          value={form.cohort}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="College Name"
-                        />
-                        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                      </div>
-                    </div>
-
-                    {/* College State */}
-                    <div className="form-group group">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">College State</span> <span className="text-pink-400 font-black">*</span></label>
-                      <div className="relative">
-                        <input
-                          name="collegeState"
-                          value={form.collegeState}
+                          placeholder="Enter Cohort (1.0 or 2.0 ...)"
                           onChange={handleChange}
-                          className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="College State"
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
 
-                    {/* College Year */}
+                    {/* Mentor 1 Feedback */}
                     <div className="form-group group md:col-span-2">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Current Year of Study</span> <span className="text-pink-400 font-black">*</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Mentor 1 Feedback</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
-                        <input
-                          name="collegeYear"
-                          value={form.collegeYear}
-                          onChange={handleChange}
+                        <textarea
+                          required
+                          name="mentor1Feedback"
+                          value={form.mentor1Feedback}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="e.g. 2nd Year"
+                          placeholder="Write Mentor 1 Feedback"
+                          rows={3}
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
 
-                    {/* Branch */}
+                    {/* Mentor 2 Feedback */}
                     <div className="form-group group md:col-span-2">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Branch</span> <span className="text-pink-400 font-black">*</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Mentor 2 Feedback</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
-                        <input
-                          name="branch"
-                          value={form.branch}
-                          onChange={handleChange}
+                        <textarea
+                          required
+                          name="mentor2Feedback"
+                          value={form.mentor2Feedback}
+                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="Branch"
+                          placeholder="Write Mentor 2 Feedback"
+                          rows={3}
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
                     </div>
 
-                    {/* Graduation Year */}
+                    {/* Mentiby Overall Feedback */}
                     <div className="form-group group md:col-span-2">
-                      <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Graduation Year</span> <span className="text-pink-400 font-black">*</span></label>
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Mentiby Overall Feedback</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
+                      <div className="relative">
+                        <textarea
+                          required
+                          name="mentibyOverallFeedback"
+                          value={form.mentibyOverallFeedback}
+
+                          className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
+                          placeholder="Write Overall Feedback"
+                          rows={3}
+                          onChange={handleChange}
+                        />
+                        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                      </div>
+                    </div>
+                     {/* Mentor Teaching Style Rating */}
+                    <div className="form-group group md:col-span-2">
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">
+                          Mentor Teaching Style Rating (1-5)
+                        </span> <span className="text-pink-400 font-black">*</span>
+                      </label>
                       <div className="relative">
                         <input
-                          name="graduationYear"
+                          required
                           type="number"
-                          min="2025"
-                          max="2035"
-                          value={form.graduationYear}
-                          onChange={handleChange}
+                          name="mentorTeachingStyleRating"
+                          value={form.mentorTeachingStyleRating}
+                          min="1"
+                          max="5"
+                          step="1"
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="e.g. 2025"
+                          placeholder="Rate Mentor Teaching Style out of 5"
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Overall Mentiby Rating */}
+                    <div className="form-group group md:col-span-2">
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">
+                          Overall Mentiby Rating (1-5)
+                        </span> <span className="text-pink-400 font-black">*</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          required
+                          type="number"
+                          name="overallMentibyRating"
+                          value={form.overallMentibyRating}
+                          min="1"
+                          max="5"
+                          step="1"
+                          className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
+                          placeholder="Rate Overall Mentiby out of 5"
+                          onChange={handleChange}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Challenges Faced */}
+                    <div className="form-group group md:col-span-2">
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Challenges Faced</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
+                      <div className="relative">
+                        <textarea
+                          required
+                          name="challengesFaced"
+                          value={form.challengesFaced}
+
+                          className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
+                          placeholder="Mention Challenges Faced"
+                          rows={3}
+                          onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
                       </div>
-                      {/* Validation message for graduation year */}
-                      {form.graduationYear && parseInt(form.graduationYear) < 2025 && (
-                        <p className="mt-2 text-red-400 text-sm font-semibold">
-                          ⚠️ Graduation year must be 2025 or later
-                        </p>
-                      )}
                     </div>
+
+                    {/* Suggestions to Improve */}
+                    <div className="form-group group md:col-span-2">
+                      <label className="form-label font-black text-xl md:text-2xl mb-4 block">
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-100 via-white to-purple-100 font-black tracking-wide">Suggestions to Improve</span> <span className="text-pink-400 font-black">*</span>
+                      </label>
+                      <div className="relative">
+                        <textarea
+                          required
+                          name="suggestionsToImprove"
+                          value={form.suggestionsToImprove}
+                          className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
+                          placeholder="Your Suggestions to Improve"
+                          rows={3}
+                          onChange={handleChange}
+                        />
+                        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                      </div>
+                    </div>
+
+                   
                   </div>
+
                 </div>
 
-                {/* Gradient Divider */}
-                <div className="h-px bg-gradient-to-r from-transparent via-pink-400/50 to-transparent"></div>
-
-                {/* Skills & Experience Section */}
-                <div className="space-y-8">
-                  <div className="flex items-center mb-10">
-                    <div className="w-4 h-12 bg-gradient-to-b from-orange-400 to-red-600 rounded-full mr-6 shadow-lg animate-pulse"></div>
-                    <h2 className="text-4xl font-bold text-transparent bg-gradient-to-r from-orange-300 to-red-300 bg-clip-text">
-                      Skills & Experience
-                    </h2>
-                  </div>
-
-                  {/* Understanding Level */}
-                  <div className="form-group group">
-                    <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Coding Experience Level</span> <span className="text-pink-400 font-black">*</span></label>
-                    <div className="relative">
-                      <select
-                        name="understanding"
-                        value={form.understanding}
-                        onChange={handleChange}
-                        className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                      >
-                        <option value="">Select your level</option>
-                        {codingLevels.map((level) => (
-                          <option key={level} value={level}>{level}</option>
-                        ))}
-                      </select>
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                    </div>
-                  </div>
-
-                  {/* Enhanced Skill Checkboxes */}
-                  <div className="form-group group">
-                    <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Familiar Technologies</span> <span className="text-pink-400 font-black">*</span></label>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-6 mt-8">
-                      {skillsList.map((skill, index) => {
-                        const gradients = [
-                          'from-blue-500 to-purple-600',
-                          'from-green-500 to-teal-600',
-                          'from-yellow-500 to-orange-600',
-                          'from-pink-500 to-red-600',
-                          'from-purple-500 to-indigo-600',
-                          'from-cyan-500 to-blue-600'
-                        ];
-                        const skillIcons = {
-                          'Python': '🐍',
-                          'C': '⚡',
-                          'C++': '💻',
-                          'HTML/CSS': '🎨',
-                          'JS': '🚀',
-                          'Java': '☕'
-                        };
-                        const isSelected = form.familiarSkills.includes(skill);
-
-                        return (
-                          <label
-                            key={skill}
-                            className={`group relative cursor-pointer transition-all duration-300 transform hover:scale-105 ${isSelected ? 'scale-105' : ''
-                              }`}
-                          >
-                            <input
-                              type="checkbox"
-                              name="familiarSkills"
-                              value={skill}
-                              checked={isSelected}
-                              onChange={handleChange}
-                              className="sr-only"
-                            />
-                            <div className={`
-                              relative p-6 rounded-2xl backdrop-blur-sm border-2 transition-all duration-300
-                              ${isSelected
-                                ? `bg-gradient-to-br ${gradients[index % gradients.length]} border-white/40 shadow-lg shadow-purple-500/25`
-                                : 'bg-white/10 border-white/20 hover:border-white/40 hover:bg-white/15'
-                              }
-                            `}>
-                              {/* Skill Icon */}
-                              <div className="text-3xl mb-3 text-center">
-                                {skillIcons[skill as keyof typeof skillIcons]}
-                              </div>
-
-                              {/* Skill Name */}
-                              <div className={`text-center font-semibold transition-colors duration-300 ${isSelected ? 'text-white' : 'text-gray-200'
-                                }`}>
-                                {skill}
-                              </div>
-
-                              {/* Checkmark */}
-                              <div className={`
-                                absolute -top-2 -right-2 w-6 h-6 rounded-full bg-gradient-to-r from-green-400 to-emerald-500 
-                                flex items-center justify-center text-white text-sm font-bold transition-all duration-300
-                                ${isSelected ? 'scale-100 opacity-100' : 'scale-0 opacity-0'}
-                              `}>
-                                ✓
-                              </div>
-
-                              {/* Hover glow effect */}
-                              <div className={`
-                                absolute inset-0 rounded-2xl bg-gradient-to-br ${gradients[index % gradients.length]} 
-                                opacity-0 group-hover:opacity-20 transition-opacity duration-300 blur-sm
-                              `}></div>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Built Projects */}
-                  <div className="form-group group">
-                    <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">Have you built any projects?</span> <span className="text-pink-400 font-black">*</span></label>
-                    <div className="relative">
-                      <select
-                        name="builtProjects"
-                        value={form.builtProjects}
-                        onChange={handleChange}
-                        className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                      >
-                        <option value="">Select an option</option>
-                        <option value="YES">Yes, I have</option>
-                        <option value="NO">No, not yet</option>
-                      </select>
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Gradient Divider */}
-                <div className="h-px bg-gradient-to-r from-transparent via-orange-400/50 to-transparent"></div>
-
-                {/* Goals Section */}
-                <div className="space-y-8">
-                  <div className="flex items-center mb-10">
-                    <div className="w-4 h-12 bg-gradient-to-b from-red-400 to-pink-600 rounded-full mr-6 shadow-lg animate-pulse"></div>
-                    <h2 className="text-4xl font-bold text-transparent bg-gradient-to-r from-red-300 to-pink-300 bg-clip-text">
-                      Your Goals
-                    </h2>
-                  </div>
-
-                  <div className="form-group group">
-                    <label className="form-label font-black text-xl md:text-2xl mb-4 block drop-shadow-lg"><span className="text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-200 font-black">What's your long-term goal with MentiBY?</span> <span className="text-pink-400 font-black">*</span></label>
-                    <div className="relative">
-                      <textarea
-                        name="goal"
-                        value={form.goal}
-                        onChange={handleChange}
-                        className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                        placeholder="Tell us about your aspirations and what you hope to achieve..."
-                        rows={4}
-                      />
-                      <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
-                    </div>
-                  </div>
-                </div>
-
+                
                 {/* Submit Button */}
                 <div className="text-center pt-10">
                   <button
                     type="submit"
                     disabled={loading}
+                    aria-label="Submit Mentiby Feedback"
                     className="group relative px-12 py-6 bg-gradient-to-r from-purple-600 via-pink-600 to-orange-600 text-white font-bold text-xl rounded-3xl shadow-2xl transition-all duration-500 transform hover:scale-105 hover:shadow-purple-500/25 hover:shadow-2xl disabled:opacity-70 disabled:cursor-not-allowed overflow-hidden"
+                    onClick={e => {
+                      if (loading) {
+                        e.preventDefault();
+                        return;
+                      }
+                    }}
                   >
                     {/* Button glow effect */}
                     <div className="absolute inset-0 bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500"></div>
@@ -1002,30 +513,15 @@ export default function OnboardingForm() {
                       {loading ? (
                         <>
                           <div className="w-6 h-6 border-3 border-white border-t-transparent rounded-full animate-spin"></div>
-                          <span>Launching your journey...</span>
+                          <span>Submitting your feedback...</span>
                         </>
                       ) : (
                         <>
                           <span className="group-hover:animate-bounce">🚀</span>
-                          <span>Start Your Adventure</span>
+                          <span>Submit Your Feedback</span>
                           <span className="group-hover:animate-pulse">✨</span>
                         </>
                       )}
-                    </div>
-
-                    {/* Animated sparkles */}
-                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                      {[...Array(6)].map((_, i) => (
-                        <div
-                          key={i}
-                          className="absolute w-1 h-1 bg-white rounded-full animate-ping"
-                          style={{
-                            left: `${20 + i * 15}%`,
-                            top: `${20 + (i % 2) * 60}%`,
-                            animationDelay: `${i * 0.2}s`,
-                          }}
-                        ></div>
-                      ))}
                     </div>
                   </button>
                 </div>
