@@ -61,6 +61,13 @@ export default function mentibyFeedbackForm() {
       setLoading(false);
       return;
     }
+    // Validate Batch: must be either Basic or Placement
+    const batchValue = form.batch.trim().toLowerCase();
+    if (batchValue !== 'basic' && batchValue !== 'placement') {
+      setError('Batch must be either "Basic" or "Placement".');
+      setLoading(false);
+      return;
+    }
     try{
 
       // Prepare data for Supabase (Mentiby feedback form fields)
@@ -546,7 +553,7 @@ export default function mentibyFeedbackForm() {
                         <span className="text-white text-lg">⚠</span>
                       </div>
                       <p className="text-red-300 font-semibold text-lg">
-                        Oops! Something went wrong. Please try again.
+                        {error}
                       </p>
                     </div>
                   </div>
