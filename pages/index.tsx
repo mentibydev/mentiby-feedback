@@ -50,6 +50,17 @@ export default function mentibyFeedbackForm() {
     setLoading(true);
     setError('');
     setSuccess(false);
+    if (!/^\d+$/.test(form.cohort)) {
+      setError('Please enter only numbers for the Cohort field.');
+      setLoading(false);
+      return;
+    }
+    const enrollmentPattern = /^\d{2}[A-Za-z]{3}\d{4}$/;
+    if (!enrollmentPattern.test(form.enrollmentID)) {
+      setError('Roll Number must follow the format: 25MBY2001 (2 digits, 3 letters, 4 digits).');
+      setLoading(false);
+      return;
+    }
     try{
 
       // Prepare data for Supabase (Mentiby feedback form fields)
@@ -256,7 +267,8 @@ export default function mentibyFeedbackForm() {
                           required
                           name="enrollmentID"
                           value={form.enrollmentID}
-                          
+                          pattern="\d{2}[A-Za-z]{3}\d{4}"
+                          title="Roll Number must follow the format: 25MBY2001"
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
                           placeholder="Enter your Roll Number"
                           onChange={handleChange}
@@ -330,11 +342,11 @@ export default function mentibyFeedbackForm() {
                       <div className="relative">
                         <input
                           required
+                          type="number"
                           name="cohort"
                           value={form.cohort}
-                          
                           className="w-full px-6 py-4 rounded-2xl bg-gradient-to-r from-white/90 to-gray-50/90 border-2 border-transparent text-black placeholder-gray-500 focus:outline-none focus:border-purple-400 focus:shadow-lg focus:shadow-purple-400/25 transition-all duration-300 hover:shadow-md backdrop-blur-sm"
-                          placeholder="Enter Cohort (1.0 or 2.0 ...)"
+                          placeholder="Enter Cohort Number (e.g., 1)"
                           onChange={handleChange}
                         />
                         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-cyan-400/0 via-purple-400/20 to-pink-400/0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
